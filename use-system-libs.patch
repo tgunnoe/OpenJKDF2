@@ -1,0 +1,201 @@
+diff --git a/cmake_modules/config_platform_deps.cmake b/cmake_modules/config_platform_deps.cmake
+index dfac6ce2..de82c542 100644
+--- a/cmake_modules/config_platform_deps.cmake
++++ b/cmake_modules/config_platform_deps.cmake
+@@ -59,13 +59,13 @@ if(NOT FreeGLUT_FOUND OR CMAKE_CROSSCOMPILING)
+     include(build_freeglut)
+ endif()
+ 
+-set(GLEW_USE_STATIC_LIBS TRUE)
++set(GLEW_USE_STATIC_LIBS FALSE)
+ if(NOT CMAKE_CROSSCOMPILING)
+     find_package(GLEW 2.2.0)
+ endif()
+ if((NOT GLEW_FOUND OR CMAKE_CROSSCOMPILING) AND NOT PLAT_WASM)
+-    message(STATUS "Going to build “GLEW 2.2.0” from Git module")
+-    include(build_glew)
++    message(STATUS "Going to build "GLEW 2.2.0" from Git module")
++    # include(build_glew) # Use system GLEW instead
+ endif()
+ 
+ if (NOT TARGET_USE_BASICSOCKETS AND NOT TARGET_USE_GAMENETWORKINGSOCKETS)
+@@ -73,12 +73,17 @@ if (NOT TARGET_USE_BASICSOCKETS AND NOT TARGET_USE_GAMENETWORKINGSOCKETS)
+ endif()
+ 
+ 
+-message(STATUS "Going to build “zlib 1.2.13” from Git module")
+-include(build_zlib)
++# message(STATUS "Going to build "zlib 1.2.13" from Git module")
++# include(build_zlib) # Use system ZLIB instead
+ 
+ if(TARGET_USE_PHYSFS)
+-    message(STATUS "Going to build “PhysFS 3.2.0” from Git module")
+-    include(build_physfs)
++    message(STATUS "Going to build "PhysFS 3.2.0" from Git module")
++    # include(build_physfs) # Use system PhysFS instead
++    find_package(PkgConfig REQUIRED)
++    pkg_check_modules(PHYSFS REQUIRED physfs)
++    add_library(PhysFS::PhysFS_s INTERFACE IMPORTED)
++    target_include_directories(PhysFS::PhysFS_s INTERFACE ${PHYSFS_INCLUDE_DIRS})
++    target_link_libraries(PhysFS::PhysFS_s INTERFACE ${PHYSFS_LIBRARIES})
+     add_compile_definitions(PLATFORM_PHYSFS)
+ endif()
+ 
+@@ -133,8 +138,10 @@ if(TARGET_USE_NOSOCKETS AND NOT TARGET_HOOKS)
+     add_definitions(-DPLATFORM_NOSOCKETS)
+ endif()
+ 
+-message(STATUS "Going to build “libpng 1.6.39” from Git module")
+-include(build_libpng)
++# message(STATUS "Going to build "libpng 1.6.39" from Git module")
++# include(build_libpng) # Use system libpng instead
++find_package(PNG REQUIRED)
++# PNG::PNG target should already be created by find_package(PNG)
+ 
+ if(TARGET_USE_LIBSMACKER)
+     list(APPEND ENGINE_SOURCE_FILES ${PROJECT_SOURCE_DIR}/src/external/libsmacker/smacker.c ${PROJECT_SOURCE_DIR}/src/external/libsmacker/smk_bitstream.c ${PROJECT_SOURCE_DIR}/src/external/libsmacker/smk_hufftree.c)
+@@ -146,12 +153,24 @@ endif()
+ 
+ # Build SDL2 from sources (n/a for WASM)
+ if(TARGET_USE_SDL2 AND NOT PLAT_WASM)
+-    message(STATUS "Going to build “SDL 2.26.5” from Git module")
+-    include(build_sdl)
++    message(STATUS "Going to build "SDL 2.26.5" from Git module")
++    # include(build_sdl) # Use system SDL2 instead
++    find_package(SDL2 REQUIRED)
++    find_package(PkgConfig REQUIRED)
++    pkg_check_modules(SDL2 REQUIRED sdl2)
++    # Create the SDL::SDL target like the build would
++    add_library(SDL::SDL INTERFACE IMPORTED)
++    target_include_directories(SDL::SDL INTERFACE ${SDL2_INCLUDE_DIRS})
++    target_link_libraries(SDL::SDL INTERFACE ${SDL2_LIBRARIES})
+ 
+     if(TARGET_USE_OPENAL)
+-        message(STATUS "Going to build “SDL_mixer 2.6.3” from Git module")
+-        include(build_sdl_mixer)
++        message(STATUS "Going to build "SDL_mixer 2.6.3" from Git module")
++        # include(build_sdl_mixer) # Use system SDL2_mixer instead
++        # Create the SDL::Mixer target using system package
++        pkg_check_modules(SDL2_MIXER REQUIRED SDL2_mixer)
++        add_library(SDL::Mixer INTERFACE IMPORTED)
++        target_include_directories(SDL::Mixer INTERFACE ${SDL2_MIXER_INCLUDE_DIRS})
++        target_link_libraries(SDL::Mixer INTERFACE ${SDL2_MIXER_LIBRARIES})
+     endif()
+ endif()
+ 
+@@ -171,12 +190,15 @@ if(TARGET_USE_OPENGL)
+ endif()
+ 
+ if((TARGET_USE_OPENAL AND NOT PLAT_WASM) OR TARGET_MACOS)
+-    #find_package(OpenAL 1.23.1)
+-    if(NOT OPENAL_FOUND)
+-        message(STATUS "Going to build “libopenal 1.23.1” from Git module")
+-        include(build_openal)
+-    else()
+-        message(STATUS "Using system OpenAL")
++    find_package(OpenAL REQUIRED)
++    message(STATUS "Using system OpenAL: ${OPENAL_LIBRARY}")
++    # Create OpenAL::OpenAL target from system library (CMake < 3.25 doesn't create it automatically)
++    if(NOT TARGET OpenAL::OpenAL)
++        add_library(OpenAL::OpenAL UNKNOWN IMPORTED)
++        set_target_properties(OpenAL::OpenAL PROPERTIES
++            IMPORTED_LOCATION "${OPENAL_LIBRARY}"
++            INTERFACE_INCLUDE_DIRECTORIES "${OPENAL_INCLUDE_DIR}"
++        )
+     endif()
+     add_compile_definitions(STDSOUND_OPENAL)
+ elseif(PLAT_WASM)
+diff --git a/cmake_modules/plat_feat_full_sdl2.cmake b/cmake_modules/plat_feat_full_sdl2.cmake
+index ffbea926..2d7c4366 100644
+--- a/cmake_modules/plat_feat_full_sdl2.cmake
++++ b/cmake_modules/plat_feat_full_sdl2.cmake
+@@ -1,7 +1,7 @@
+ # These are the standard features for full game support
+ set(TARGET_USE_PHYSFS TRUE)
+ #set(TARGET_USE_BASICSOCKETS TRUE)
+-set(TARGET_USE_GAMENETWORKINGSOCKETS TRUE)
++set(TARGET_USE_GAMENETWORKINGSOCKETS FALSE)
+ set(TARGET_USE_LIBSMACKER TRUE)
+ set(TARGET_USE_LIBSMUSHER TRUE)
+ set(TARGET_USE_SDL2 TRUE)
+diff --git a/cmake_modules/precompile_globals.cmake b/cmake_modules/precompile_globals.cmake
+index 7b440c0f..7cc3fa19 100644
+--- a/cmake_modules/precompile_globals.cmake
++++ b/cmake_modules/precompile_globals.cmake
+@@ -7,12 +7,20 @@ set(GLOBALS_C_COG ${PROJECT_SOURCE_DIR}/src/globals.c.cog)
+ make_directory(${CMAKE_CURRENT_BINARY_DIR}/generated)
+ include_directories(${CMAKE_CURRENT_BINARY_DIR}/generated)
+ 
+-if(NOT PLAT_MSVC)
++option(USE_SYSTEM_COGAPP "Use system-installed python with cogapp instead of creating a virtualenv" OFF)
++
++if(USE_SYSTEM_COGAPP)
++    # Use system python with cogapp already installed (e.g., for Nix builds)
++    set(PYTHON_EXE "python3")
++    set(COGAPP_DEPENDS_LIST "")
++elseif(NOT PLAT_MSVC)
+     set(PYTHON_EXE "${CMAKE_CURRENT_BINARY_DIR}/cogapp_venv/bin/python3")
+     set(COGAPP_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/cogapp_venv/bin/cog")
++    set(COGAPP_DEPENDS_LIST ${PYTHON_EXE} ${COGAPP_DEPENDS})
+ else()
+     set(PYTHON_EXE "python")
+     set(COGAPP_DEPENDS "python")
++    set(COGAPP_DEPENDS_LIST ${COGAPP_DEPENDS})
+ endif()
+ 
+ list(JOIN EMBEDDED_RESOURCES "+" EMBEDDED_RESOURCES_SEPARATED)
+@@ -21,10 +29,10 @@ list(JOIN EMBEDDED_RESOURCES "+" EMBEDDED_RESOURCES_SEPARATED)
+ add_custom_command(
+     OUTPUT ${GLOBALS_C}
+     COMMAND ${PYTHON_EXE} -m cogapp -d -D symbols_fpath="${SYMBOLS_FILE}" -D project_root="${PROJECT_SOURCE_DIR}" -D embedded_resources="${EMBEDDED_RESOURCES_SEPARATED}" -o ${GLOBALS_C} ${GLOBALS_C_COG}
+-    DEPENDS ${SYMBOLS_FILE} ${GLOBALS_C_COG} ${GLOBALS_H} ${EMBEDDED_RESOURCES} ${PYTHON_EXE} ${COGAPP_DEPENDS}
++    DEPENDS ${SYMBOLS_FILE} ${GLOBALS_C_COG} ${GLOBALS_H} ${EMBEDDED_RESOURCES} ${COGAPP_DEPENDS_LIST}
+ )
+ 
+-if(NOT PLAT_MSVC)
++if(NOT PLAT_MSVC AND NOT USE_SYSTEM_COGAPP)
+     add_custom_command(
+         OUTPUT ${PYTHON_EXE}
+         COMMAND python3 -m venv ${CMAKE_CURRENT_BINARY_DIR}/cogapp_venv
+@@ -39,7 +47,7 @@ endif()
+ add_custom_command(
+     OUTPUT ${GLOBALS_H}
+     COMMAND ${PYTHON_EXE} -m cogapp -d -D symbols_fpath="${SYMBOLS_FILE}" -D project_root="${PROJECT_SOURCE_DIR}" -D embedded_resources="${EMBEDDED_RESOURCES_SEPARATED}" -o ${GLOBALS_H} ${GLOBALS_H_COG}
+-    DEPENDS ${SYMBOLS_FILE} ${GLOBALS_H_COG} ${PYTHON_EXE} ${COGAPP_DEPENDS} ${EMBEDDED_RESOURCES}
++    DEPENDS ${SYMBOLS_FILE} ${GLOBALS_H_COG} ${COGAPP_DEPENDS_LIST} ${EMBEDDED_RESOURCES}
+ )
+ 
+ add_custom_command(
+diff --git a/cmake_modules/target_macos_all.cmake b/cmake_modules/target_macos_all.cmake
+index eb105e76..54b30bfa 100644
+--- a/cmake_modules/target_macos_all.cmake
++++ b/cmake_modules/target_macos_all.cmake
+@@ -81,9 +81,11 @@ macro(plat_link_and_package)
+     endif()
+ 
+     #
+-    # macOS post-build packaging
++    # macOS post-build packaging (skip for Nix builds that use system libraries)
+     #
+-    postcompile_macos()
++    if(NOT SKIP_MACOS_BUNDLE)
++        postcompile_macos()
++    endif()
+ endmacro()
+ 
+ macro(plat_extra_deps)
+diff --git a/src/Win95/stdSound.h b/src/Win95/stdSound.h
+index e04d3ef5..c93d8b33 100644
+--- a/src/Win95/stdSound.h
++++ b/src/Win95/stdSound.h
+@@ -41,8 +41,8 @@
+ #include <AL/al.h>
+ #include <AL/alc.h>
+ #else
+-#include "al.h"
+-#include "alc.h"
++#include <AL/al.h>
++#include <AL/alc.h>
+ #endif
+ typedef struct stdALBuffer
+ {
